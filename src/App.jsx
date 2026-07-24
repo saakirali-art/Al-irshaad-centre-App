@@ -25,7 +25,7 @@ const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Amiri:wght@
 --------------------------------------------------------- */
 const STR = {
   en: {
-    appTitle: "Noor Quran Center — Operations",
+    appTitle: "Alirshaad Quran Center — Operations",
     appSubtitle: "Tracking · Revision · Engagement · Scheduling",
     tabProgress: "Progress", tabRevision: "Revision Queue", tabEngagement: "Engagement", tabAdmin: "Admin & Scaling",
     attendance: "Attendance", tajweedMistakes: "Tajweed mistakes / week", surahs: "Surahs", dueToday: "due today",
@@ -50,7 +50,7 @@ const STR = {
     signInHelp: "Staff sign in with a magic link — no password to remember.",
   },
   ar: {
-    appTitle: "مركز نور لتعليم القرآن — الإدارة",
+    appTitle: "مركز الإرشاد لتعليم القرآن — الإدارة",
     appSubtitle: "المتابعة · المراجعة · التحفيز · الجدولة",
     tabProgress: "التقدم", tabRevision: "قائمة المراجعة", tabEngagement: "التحفيز", tabAdmin: "الإدارة والتوسع",
     attendance: "الحضور", tajweedMistakes: "أخطاء التجويد / أسبوعياً", surahs: "السور", dueToday: "مستحقة اليوم",
