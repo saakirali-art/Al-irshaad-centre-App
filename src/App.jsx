@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import {
   BookOpen, Calendar, Trophy, Users, TrendingUp, Flame, CheckCircle2,
   Award, Star, Plus, UserPlus, RefreshCw, ChevronRight, Sparkles, X,
-  Languages, Trash2, LogOut, Mail
+  Languages, Trash2, LogOut, Mail, LayoutDashboard, Upload, FileText
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, ResponsiveContainer, Tooltip
 } from "recharts";
+import mammoth from "mammoth";
 import { supabase } from "./supabaseClient";
 
 /* ---------------------------------------------------------
@@ -48,6 +49,21 @@ const STR = {
     signOut: "Sign out", signIn: "Sign in to your center", emailPlaceholder: "you@center.org",
     sendLink: "Send magic link", checkEmail: "Check your email for a sign-in link.",
     signInHelp: "Staff sign in with a magic link — no password to remember.",
+    tabDashboard: "Dashboard", tabImport: "Import Students",
+    dashTotalStudents: "Total students", dashTotalTeachers: "Total teachers",
+    dashAvgAttendance: "Avg. attendance", dashDueToday: "Revisions due today",
+    dashReferrals: "Referral pipeline", dashTodaysClasses: "Today's classes",
+    dashNoClasses: "No classes scheduled today.",
+    importTitle: "Import students from Word",
+    importDesc: "Upload a .docx file listing your students — a simple list of names, or a table with extra columns like track or parent contact. We'll read it and show you a preview before anything is added.",
+    importChooseFile: "Choose Word file (.docx)", importParsing: "Reading document…",
+    importPreviewTitle: "Review before importing",
+    importPreviewNote: "Uncheck any row you don't want to import, or edit a name if needed. Pick the teacher to assign them to below.",
+    importColName: "Name", importColContact: "Parent contact",
+    importConfirm: "Import selected students", importCancel: "Cancel",
+    importNoneFound: "No names found in this document. Make sure it has one name per line, or a table with a name column.",
+    importSuccess: (n) => `${n} student${n === 1 ? "" : "s"} imported successfully.`,
+    importSelectAll: "Select all", importAssignTeacher: "Assign to teacher",
   },
   ar: {
     appTitle: "مركز الإرشاد لتعليم القرآن — الإدارة",
@@ -73,6 +89,21 @@ const STR = {
     signOut: "تسجيل الخروج", signIn: "تسجيل الدخول إلى المركز", emailPlaceholder: "you@center.org",
     sendLink: "إرسال رابط الدخول", checkEmail: "تحقق من بريدك الإلكتروني لرابط الدخول.",
     signInHelp: "يسجل الموظفون الدخول عبر رابط سحري — دون الحاجة لكلمة مرور.",
+    tabDashboard: "لوحة المعلومات", tabImport: "استيراد الطلاب",
+    dashTotalStudents: "إجمالي الطلاب", dashTotalTeachers: "إجمالي المعلمين",
+    dashAvgAttendance: "متوسط الحضور", dashDueToday: "مراجعات مستحقة اليوم",
+    dashReferrals: "خط الإحالات", dashTodaysClasses: "حصص اليوم",
+    dashNoClasses: "لا توجد حصص مجدولة اليوم.",
+    importTitle: "استيراد الطلاب من ملف وورد",
+    importDesc: "ارفع ملف Word (.docx) يحتوي على أسماء الطلاب — قائمة بسيطة بالأسماء، أو جدول بأعمدة إضافية مثل المسار أو تواصل ولي الأمر. سنقرأ الملف ونعرض لك معاينة قبل إضافة أي شيء.",
+    importChooseFile: "اختر ملف Word (.docx)", importParsing: "جاري قراءة الملف…",
+    importPreviewTitle: "المراجعة قبل الاستيراد",
+    importPreviewNote: "قم بإلغاء تحديد أي صف لا تريد استيراده، أو عدّل الاسم إذا لزم الأمر. اختر المعلم الذي سيُسند إليه الطلاب أدناه.",
+    importColName: "الاسم", importColContact: "تواصل ولي الأمر",
+    importConfirm: "استيراد الطلاب المحددين", importCancel: "إلغاء",
+    importNoneFound: "لم يتم العثور على أسماء في هذا الملف. تأكد من وجود اسم واحد في كل سطر، أو جدول يحتوي على عمود للأسماء.",
+    importSuccess: (n) => `تم استيراد ${n} ${n === 1 ? "طالب" : "طلاب"} بنجاح.`,
+    importSelectAll: "تحديد الكل", importAssignTeacher: "إسناد إلى معلم",
   },
 };
 
@@ -186,7 +217,7 @@ export default function App() {
 function Dashboard({ session }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("progress");
+  const [tab, setTab] = useState("dashboard");
   const [openStudent, setOpenStudent] = useState(null);
   const [toast, setToast] = useState("");
   const [lang, setLang] = useState("en");
@@ -260,6 +291,18 @@ function Dashboard({ session }) {
     await supabase.from("students").delete().eq("id", id);
   }
 
+  async function addStudentsBulk(rows) {
+    const payload = rows.map((r) => ({
+      name: r.name, track: r.track || "Hifz",
+      teacher_id: r.teacherId || null, parent_contact: r.parentContact || "",
+    }));
+    const { data: inserted, error } = await supabase.from("students").insert(payload).select();
+    if (error) { notify(error.message); return 0; }
+    setData((d) => ({ ...d, students: [...d.students, ...inserted.map(fromDbStudent)] }));
+    notify(t("importSuccess", inserted.length));
+    return inserted.length;
+  }
+
   async function addReferral(name, contact) {
     const { data: row, error } = await supabase.from("referrals").insert({ name, contact, status: "Invited" }).select().single();
     if (error) { notify(error.message); return; }
@@ -305,9 +348,11 @@ function Dashboard({ session }) {
       <TabNav tab={tab} setTab={setTab} t={t} />
 
       <div style={{ maxWidth: 1080, margin: "24px auto 0" }}>
+        {tab === "dashboard" && <DashboardHomeTab data={data} t={t} lang={lang} headFont={headFont} />}
         {tab === "progress" && <ProgressTab data={data} onOpen={setOpenStudent} onAttendance={markAttendance} t={t} lang={lang} headFont={headFont} />}
         {tab === "revision" && <RevisionTab data={data} onMark={markRevision} t={t} lang={lang} />}
         {tab === "engagement" && <EngagementTab data={data} t={t} lang={lang} headFont={headFont} />}
+        {tab === "import" && <ImportStudentsTab data={data} t={t} lang={lang} onImportStudents={addStudentsBulk} />}
         {tab === "admin" && (
           <AdminTab
             data={data} t={t} lang={lang}
@@ -374,9 +419,11 @@ function Header({ lang, setLang, t, headFont, session }) {
 
 function TabNav({ tab, setTab, t }) {
   const tabs = [
+    { id: "dashboard", label: t("tabDashboard"), icon: LayoutDashboard },
     { id: "progress", label: t("tabProgress"), icon: TrendingUp },
     { id: "revision", label: t("tabRevision"), icon: RefreshCw },
     { id: "engagement", label: t("tabEngagement"), icon: Trophy },
+    { id: "import", label: t("tabImport"), icon: Upload },
     { id: "admin", label: t("tabAdmin"), icon: Users },
   ];
   return (
@@ -545,6 +592,221 @@ function EngagementTab({ data, t, lang, headFont }) {
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DashboardHomeTab({ data, t, lang, headFont }) {
+  const totalStudents = data.students.length;
+  const totalTeachers = data.teachers.length;
+  const avgAttendance = totalStudents
+    ? Math.round(data.students.reduce((sum, s) => sum + attendanceRate(s), 0) / totalStudents)
+    : 0;
+  const dueTodayTotal = data.students.reduce((sum, s) => sum + dueCount(s), 0);
+  const enrolledCount = data.referrals.filter((r) => r.status === "Enrolled").length;
+  const invitedCount = data.referrals.length - enrolledCount;
+
+  const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  const todaysClasses = data.classes.filter((c) => c.day === todayName);
+
+  const cards = [
+    { label: t("dashTotalStudents"), value: totalStudents, icon: Users },
+    { label: t("dashTotalTeachers"), value: totalTeachers, icon: UserPlus },
+    { label: t("dashAvgAttendance"), value: `${avgAttendance}%`, icon: CheckCircle2 },
+    { label: t("dashDueToday"), value: dueTodayTotal, icon: RefreshCw },
+  ];
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14 }}>
+        {cards.map((c, i) => {
+          const Icon = c.icon;
+          return (
+            <div key={i} className="card-hover" style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: C.tealSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Icon size={15} color={C.teal} />
+                </div>
+                <div style={{ fontSize: 11.5, color: C.inkFaint, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>{c.label}</div>
+              </div>
+              <div style={{ fontFamily: headFont, fontSize: 26, fontWeight: 700, color: C.tealDeep }}>{c.value}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <div>
+          <SectionLabel icon={Calendar}>{t("dashTodaysClasses")}</SectionLabel>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+            {todaysClasses.length === 0 && <div style={{ padding: 16, fontSize: 12.5, color: C.inkFaint }}>{t("dashNoClasses")}</div>}
+            {todaysClasses.map((c, i) => (
+              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", fontSize: 13, borderBottom: i < todaysClasses.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                <span style={{ fontWeight: 600 }}>{c.time}</span>
+                <span style={{ color: C.inkFaint }}>{data.teachers.find((tc) => tc.id === c.teacherId)?.name}</span>
+                <span style={{ color: C.gold, fontWeight: 600 }}>{TRACK_TR[c.track]?.[lang] || c.track}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <SectionLabel icon={UserPlus}>{t("dashReferrals")}</SectionLabel>
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, display: "flex", gap: 28 }}>
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: C.tealDeep, fontFamily: headFont }}>{enrolledCount}</div>
+              <div style={{ fontSize: 11.5, color: C.inkFaint }}>{t("enrolled")}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: C.gold, fontFamily: headFont }}>{invitedCount}</div>
+              <div style={{ fontSize: 11.5, color: C.inkFaint }}>{t("invited")}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   IMPORT STUDENTS FROM WORD (.docx)
+--------------------------------------------------------- */
+function normalizeTrack(val) {
+  if (!val) return "Hifz";
+  const v = String(val).toLowerCase();
+  if (v.includes("tajweed") || v.includes("تجويد")) return "Tajweed";
+  if (v.includes("qaida") || v.includes("قاعدة")) return "Qaida";
+  return "Hifz";
+}
+
+async function parseDocxFile(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const result = await mammoth.convertToHtml({ arrayBuffer });
+  const doc = new DOMParser().parseFromString(result.value, "text/html");
+
+  const table = doc.querySelector("table");
+  if (table) {
+    const trs = Array.from(table.querySelectorAll("tr"));
+    if (trs.length === 0) return [];
+    const headerCells = Array.from(trs[0].querySelectorAll("th,td")).map((c) => c.textContent.trim().toLowerCase());
+    const nameIdx = headerCells.findIndex((h) => /name|اسم/.test(h));
+    const trackIdx = headerCells.findIndex((h) => /track|level|مسار/.test(h));
+    const contactIdx = headerCells.findIndex((h) => /contact|phone|parent|تواصل|هاتف/.test(h));
+    const hasHeader = nameIdx !== -1 || trackIdx !== -1 || contactIdx !== -1;
+    const dataRows = hasHeader ? trs.slice(1) : trs;
+    return dataRows
+      .map((tr) => {
+        const cells = Array.from(tr.querySelectorAll("td,th")).map((c) => c.textContent.trim());
+        const name = hasHeader && nameIdx !== -1 ? cells[nameIdx] : cells[0];
+        const track = hasHeader && trackIdx !== -1 ? cells[trackIdx] : cells[1];
+        const contact = hasHeader && contactIdx !== -1 ? cells[contactIdx] : cells[2];
+        return { name: (name || "").trim(), track: normalizeTrack(track), contact: (contact || "").trim() };
+      })
+      .filter((r) => r.name);
+  }
+
+  const lines = Array.from(doc.querySelectorAll("p, li")).map((el) => el.textContent.trim()).filter(Boolean);
+  return lines
+    .map((line) => {
+      const parts = line.split(/\t|,|\s{2,}|\s-\s|\|/).map((p) => p.trim()).filter(Boolean);
+      return { name: parts[0] || "", track: normalizeTrack(parts[1]), contact: parts[2] || "" };
+    })
+    .filter((r) => r.name);
+}
+
+function ImportStudentsTab({ data, t, lang, onImportStudents }) {
+  const [parsing, setParsing] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [assignTeacher, setAssignTeacher] = useState(data.teachers[0]?.id || "");
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParsing(true);
+    setRows(null);
+    try {
+      const parsed = await parseDocxFile(file);
+      setRows(parsed.map((r) => ({ ...r, include: true })));
+    } catch (err) {
+      setRows([]);
+    }
+    setParsing(false);
+    e.target.value = "";
+  }
+
+  function updateRow(i, field, value) {
+    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
+  }
+
+  async function confirmImport() {
+    const selected = rows.filter((r) => r.include && r.name.trim());
+    if (selected.length === 0) return;
+    setImporting(true);
+    await onImportStudents(
+      selected.map((r) => ({ name: r.name.trim(), track: r.track || "Hifz", teacherId: assignTeacher, parentContact: r.contact || "" }))
+    );
+    setImporting(false);
+    setRows(null);
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div>
+        <SectionLabel icon={Upload}>{t("importTitle")}</SectionLabel>
+        <div style={{ fontSize: 12.5, color: C.inkSoft, marginBottom: 12, lineHeight: 1.6, maxWidth: 620 }}>{t("importDesc")}</div>
+        <label style={{ ...addBtn, display: "inline-flex", cursor: "pointer" }}>
+          <FileText size={13} /> {t("importChooseFile")}
+          <input type="file" accept=".docx" onChange={handleFile} style={{ display: "none" }} />
+        </label>
+        {parsing && <div style={{ marginTop: 10, fontSize: 12.5, color: C.inkFaint }}>{t("importParsing")}</div>}
+      </div>
+
+      {rows !== null && (
+        <div>
+          <SectionLabel icon={Users}>{t("importPreviewTitle")}</SectionLabel>
+          {rows.length === 0 ? (
+            <EmptyNote text={t("importNoneFound")} />
+          ) : (
+            <>
+              <div style={{ fontSize: 11.5, color: C.inkFaint, marginBottom: 10 }}>{t("importPreviewNote")}</div>
+              <div style={{ marginBottom: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <label style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={rows.every((r) => r.include)}
+                    onChange={(e) => setRows((rs) => rs.map((r) => ({ ...r, include: e.target.checked })))}
+                  />
+                  {t("importSelectAll")}
+                </label>
+                <span style={{ fontSize: 12.5, color: C.inkFaint }}>{t("importAssignTeacher")}:</span>
+                <select value={assignTeacher} onChange={(e) => setAssignTeacher(e.target.value)} style={selectStyle}>
+                  {data.teachers.map((tc) => <option key={tc.id} value={tc.id}>{tc.name}</option>)}
+                </select>
+              </div>
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+                {rows.map((r, i) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "auto 1.4fr 1fr 1.2fr", gap: 10, alignItems: "center", padding: "8px 14px", borderBottom: i < rows.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                    <input type="checkbox" checked={r.include} onChange={(e) => updateRow(i, "include", e.target.checked)} />
+                    <input value={r.name} onChange={(e) => updateRow(i, "name", e.target.value)} style={inputStyle} placeholder={t("importColName")} />
+                    <select value={r.track} onChange={(e) => updateRow(i, "track", e.target.value)} style={selectStyle}>
+                      {Object.keys(TRACK_TR).map((tr) => <option key={tr} value={tr}>{TRACK_TR[tr][lang]}</option>)}
+                    </select>
+                    <input value={r.contact} onChange={(e) => updateRow(i, "contact", e.target.value)} style={inputStyle} placeholder={t("importColContact")} />
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                <button onClick={confirmImport} disabled={importing} style={addBtn}>
+                  <Plus size={13} /> {importing ? "…" : t("importConfirm")}
+                </button>
+                <button onClick={() => setRows(null)} style={{ ...addBtn, background: C.surface, color: C.inkFaint, border: `1px solid ${C.border}` }}>
+                  {t("importCancel")}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
